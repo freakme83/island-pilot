@@ -1,5 +1,6 @@
 import * as THREE from '../vendor/three.js';
 export function createCamera({camera,plane,sky,surfaceHeight,$}){
+let presetIndex=0;
 const presets=[{distance:17,elevation:18},{distance:38,elevation:24}];
 const cameraSettings={...presets[0]};let cameraDistance=cameraSettings.distance,cameraElevation=cameraSettings.elevation;
 const forward=new THREE.Vector3(0,0,1),chaseDirection=new THREE.Vector3(0,0,1),cameraUp=new THREE.Vector3(0,1,0),worldUp=new THREE.Vector3(0,1,0),oldDirection=new THREE.Vector3(),projectedUp=new THREE.Vector3(),cross=new THREE.Vector3(),desired=new THREE.Vector3(),target=new THREE.Vector3(),transport=new THREE.Quaternion();
