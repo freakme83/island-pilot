@@ -6,12 +6,15 @@ const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 export function engineAt(p,speed){return p.engine/(1+Math.max(0,speed-p.fadeStart)*p.fadeRate);}
 
 export class Flight {
- constructor(profileId="bush"){this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
+ constructor(profileId="bush",atmosphere=null){this.atmosphere=atmosphere;this.airVelocity=new Vector3();this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
  selectProfile(id){if(!profiles[id])return;this.profileId=id;this.profile=profiles[id];this.tuning=this.tunings[id];this.reset();}
  restoreDefaults(){Object.assign(this.tuning,defaults);this.reset();}
  reset(){
   const p=this.profile,t=this.tuning;
   this.p.set(-1200,ground(-1200,0)+p.startHeight,0);this.v.set(0,0,p.cruise);this.w.set(0,0,0);this.input={pitch:0,roll:0,yaw:0};this.stall=0;this.alpha=0;this.time=0;this.resets=0;
+  if(this.atmosphere?.enabled){this.atmosphere.reset();this.v.add(this.atmosphere.wind)}
+  else this.atmosphere?.reset();
+  this.airVelocity.copy(this.v);if(this.atmosphere?.enabled)this.airVelocity.sub(this.atmosphere.wind);
   Object.assign(this.diagnostics,{alpha:0,beta:0,criticalAoA:p.critical/t.stall,separated:0,clAttached:0,cl:0,cd:0,liftN:0,stallLiftLossN:0,stallAuthorityMultiplier:1,dragN:0,thrustN:0,weightN:p.mass*9.81,dynamicPressure:0,authority:0});
   const qs=.5*p.rho*p.cruise*p.cruise*p.area;
   const cl=p.mass*9.81/(qs*t.lift);
@@ -38,9 +41,10 @@ export class Flight {
   const t=this.tuning,p=this.profile;
   this.throttle=clamp(this.throttle+(controls.throttle||0)*.23*dt,0,1);
   for(const k of ['pitch','roll','yaw'])this.input[k]+=((controls[k]||0)-this.input[k])*(1-Math.exp(-dt*7));
-  const speed=Math.max(.1,this.v.length());
+  const air=this.atmosphere?.enabled?this.airVelocity.copy(this.v).sub(this.atmosphere.sample(this.time,dt)):this.v;
+  const speed=Math.max(.1,air.length());
   this.f.set(0,0,1).applyQuaternion(this.q);this.u.set(0,1,0).applyQuaternion(this.q);this.x.set(1,0,0).applyQuaternion(this.q);
-  this.inv.copy(this.q).invert();this.local.copy(this.v).applyQuaternion(this.inv);
+  this.inv.copy(this.q).invert();this.local.copy(air).applyQuaternion(this.inv);
   const alpha=Math.atan2(-this.local.y,Math.max(.1,this.local.z));this.alpha=alpha;
   const beta=Math.asin(clamp(this.local.x/speed,-1,1));
   const critical=p.critical/t.stall;
@@ -49,7 +53,7 @@ export class Flight {
   const clAttached=clamp(p.cl0+p.slope*alpha,p.clMin,p.clMax);
   const cl=(clAttached*(1-this.stall)+p.postLift*Math.sin(2*alpha)*this.stall)*t.lift;
   const qs=.5*p.rho*speed*speed*p.area;
-  this.dir.copy(this.v).divideScalar(speed);
+  this.dir.copy(air).divideScalar(speed);
   // Lift is perpendicular to velocity, so it cannot create kinetic energy.
   this.liftDir.copy(this.u).addScaledVector(this.dir,-this.u.dot(this.dir)).normalize();
   const cd=(p.cd0+p.induced*cl*cl+p.stallDrag*this.stall+p.sideDrag*Math.sin(beta)**2)*t.drag;
@@ -67,6 +71,7 @@ export class Flight {
   this.w.x+=(this.input.pitch*p.pitchPower*t.pitch*authority +p.pitchStability*(alpha-this.trim)*authority+p.stallMoment*this.stall*Math.sign(alpha)-p.pitchDamping*this.w.x)*dt;
   this.w.y+=(-this.input.yaw*p.yawPower*t.yaw*authority+p.yawStability*beta*authority-p.yawDamping*(this.w.y-coordinated*p.coordination))*dt;
   this.w.z+=(this.input.roll*p.rollPower*t.roll*authority-p.rollDamping*this.w.z)*dt;
+  if(this.atmosphere?.enabled){const a=this.atmosphere.angular,loading=720/p.mass;this.w.x+=a.pitch*loading*dt;this.w.y+=a.yaw*loading*dt;this.w.z+=a.roll*loading*dt;}
   const angularSpeed=this.w.length();
   if(angularSpeed>1e-8){this.dq.setFromAxisAngle(this.dir.copy(this.w).divideScalar(angularSpeed),angularSpeed*dt);this.q.multiply(this.dq).normalize();}
   if(recover && (this.p.y<ground(this.p.x,this.p.z)+9 || !Number.isFinite(this.p.lengthSq()))){const n=this.resets+1;this.reset();this.resets=n;return true;}
