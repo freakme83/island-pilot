@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as THREE from '../src/vendor/three.js';
 import {Flight} from '../src/physics/Flight.js';
+import {Atmosphere} from '../src/physics/atmosphere.js';
 import {ground} from '../src/world/height.js';
 import {createRecorder} from '../src/telemetry/recorder.js';
 import {createCamera} from '../src/rendering/camera.js';
@@ -9,7 +10,7 @@ import {createInterface} from '../src/ui/interface.js';
 
 const nodes=new Map(),events=new Map();let created=0;
 function node(id=''){
- if(!nodes.has(id))nodes.set(id,{id,textContent:'',value:'',disabled:false,hidden:false,
+ if(!nodes.has(id))nodes.set(id,{id,textContent:'',value:'',disabled:false,hidden:false,dataset:{},style:{setProperty(){}},
   classList:{toggle(){}},addEventListener(type,fn){(this.handlers??={})[type]=fn},
   click(){this.handlers?.click?.({preventDefault(){}})},appendChild(){},setAttribute(){}});
  return nodes.get(id);
@@ -25,7 +26,8 @@ const sim=new Flight(),keys=new Set(),renderer={domElement:node('canvas'),info:{
 const recorder=createRecorder({sim,keys,renderer,ground,$,isPaused:()=>false});
 const cameraRig=createCamera({camera:new THREE.PerspectiveCamera(),plane:new THREE.Group(),sky:new THREE.Group(),surfaceHeight:()=>0,$});
 const keyboard=createKeyboard({keys,recordEvent:recorder.recordEvent,clearHeldControls:recorder.clearHeldControls,reset:()=>{},cameraRig,setPaused(){},setPrevious(){},setAccumulator(){}});
-createInterface({sim,...recorder,reset:()=>{},cameraRig,renderer,$});
+const ui=createInterface({sim,atmosphere:new Atmosphere('off'),...recorder,reset:()=>{},cameraRig,renderer,$});
+ui.updateHud(.1);assert.equal(node('heading-number').textContent,'000°');
 const tick=(effect=null,alpha=null,speed=null,vertical=null)=>{
  if(effect!==null)sim.stall=effect;
  if(alpha!==null){sim.alpha=alpha;sim.diagnostics.alpha=alpha}
@@ -56,6 +58,13 @@ node('record-export').click();const exported=JSON.parse(await downloaded.text())
 assert.equal(exported.samples.length,2);assert.ok(exported.summary.stallDiagnosticsSummary);
 start();assert.equal(recorder.recorder.data,data);assert.match(node('recorder-message').textContent,/Export or discard/);
 discard();assert.equal(recorder.recorder.data,null);
+
+// The response control uses the existing coalesced tuning event and stop flush.
+start();node('turbulence-response').value='1.5';node('turbulence-response').handlers.input();many(13);stop();
+assert.equal(sim.turbulenceResponse,1.5);
+const responseEvent=recorder.recorder.data.events.find(e=>e.type==='tuning_changed'&&e.parameter==='turbulenceResponse');
+assert.equal(responseEvent.newValue,1.5);assert.equal(responseEvent.configuration.airflowResponse.responseScale,1.5);
+discard();sim.turbulenceResponse=1;
 
 // Developed stall, nose-down aerodynamic recovery while still descending.
 sim.reset();recorder.resetStallDiagnosticState();start();many(12,0,0,36,0);

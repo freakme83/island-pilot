@@ -1,4 +1,5 @@
 import {Flight} from './physics/Flight.js';
+import {Atmosphere} from './physics/atmosphere.js';
 import {ground} from './world/height.js';
 import {createScene} from './rendering/scene.js';
 import {createWorld} from './world/world.js';
@@ -9,7 +10,8 @@ import {createKeyboard} from './controls/keyboard.js';
 import {createInterface} from './ui/interface.js';
 
 const $=id=>document.getElementById(id);
-const sim=new Flight();
+const atmosphere=new Atmosphere();
+const sim=new Flight('bush',atmosphere);
 const keys=new Set();
 let accumulator=0,previous=performance.now(),paused=false;
 const {scene,renderer,camera,sky,ocean}=createScene($);
@@ -25,7 +27,7 @@ function reset(){
  flightRecorder.recordEvent('flight_reset',{cause:'manual'});
 }
 const keyboard=createKeyboard({keys,recordEvent:flightRecorder.recordEvent,clearHeldControls:flightRecorder.clearHeldControls,reset,cameraRig,setPaused:v=>{paused=v},setPrevious:v=>{previous=v},setAccumulator:v=>{accumulator=v}});
-const ui=createInterface({sim,...flightRecorder,reset,cameraRig,renderer,$});
+const ui=createInterface({sim,atmosphere,...flightRecorder,reset,cameraRig,renderer,$});
 window.addEventListener('resize',()=>{renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();});
 renderer.domElement.addEventListener('webglcontextlost',e=>{e.preventDefault();paused=true;$('error').hidden=false;$('error').textContent='Graphics paused. Reload this file to resume.';});
 function animate(now){
@@ -49,4 +51,4 @@ function animate(now){
  renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
-window.flightLab={recorder:flightRecorder.recorder,getState:()=>({ready:aircraft.loaded,speed:sim.v.length(),altitude:sim.p.y-ground(sim.p.x,sim.p.z),vertical:sim.v.y,throttle:sim.throttle,stall:sim.stall,stallDiagnostics:flightRecorder.stateSnapshot().stallDiagnostics,position:sim.p.toArray(),quaternion:sim.q.toArray(),profile:sim.profileId,camera:{...cameraRig.cameraSettings,actualDistance:camera.position.distanceTo(aircraft.plane.position),preset:cameraRig.presetIndex},trees:{...world.treeStats},tuning:{...sim.tuning},meshes:renderer.info.render.calls,triangles:renderer.info.render.triangles}),reset};
+window.flightLab={recorder:flightRecorder.recorder,getState:()=>({ready:aircraft.loaded,speed:flightRecorder.stateSnapshot().airspeedMps,altitude:sim.p.y-ground(sim.p.x,sim.p.z),vertical:sim.v.y,throttle:sim.throttle,stall:sim.stall,stallDiagnostics:flightRecorder.stateSnapshot().stallDiagnostics,position:sim.p.toArray(),quaternion:sim.q.toArray(),profile:sim.profileId,atmosphere:atmosphere.config(),wind:atmosphere.wind.toArray(),camera:{...cameraRig.cameraSettings,actualDistance:camera.position.distanceTo(aircraft.plane.position),preset:cameraRig.presetIndex},trees:{...world.treeStats},tuning:{...sim.tuning},meshes:renderer.info.render.calls,triangles:renderer.info.render.triangles}),reset};
