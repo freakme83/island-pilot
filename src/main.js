@@ -1,6 +1,6 @@
 import {Flight} from './physics/Flight.js';
-import {Atmosphere} from './physics/atmosphere.js';
-import {ground} from './world/height.js';
+import {Atmosphere,ATMOSPHERE_SEED} from './physics/atmosphere.js';
+import {ground,terrain} from './world/height.js';
 import {createScene} from './rendering/scene.js';
 import {createWorld} from './world/world.js';
 import {createAircraft} from './aircraft/aircraft.js';
@@ -10,7 +10,7 @@ import {createKeyboard} from './controls/keyboard.js';
 import {createInterface} from './ui/interface.js';
 
 const $=id=>document.getElementById(id);
-const atmosphere=new Atmosphere();
+const atmosphere=new Atmosphere('light',ATMOSPHERE_SEED,terrain);
 const sim=new Flight('bush',atmosphere);
 const keys=new Set();
 let accumulator=0,previous=performance.now(),paused=false;
@@ -38,8 +38,8 @@ function animate(now){
  accumulator+=dt;const input=keyboard.controls();let recovered=false;
  while(accumulator>=1/120){
   const wasStalled=sim.stall>.35;
-  recovered=sim.step(1/120,input)||recovered;accumulator-=1/120;
-  flightRecorder.recordTick(recovered,1/120);
+  const didReset=sim.step(1/120,input);recovered=didReset||recovered;accumulator-=1/120;
+  flightRecorder.recordTick(didReset,1/120);
   if(wasStalled!==(sim.stall>.35))flightRecorder.recorder.wasStalled=sim.stall>.35;
  }
  const blend=accumulator*120;

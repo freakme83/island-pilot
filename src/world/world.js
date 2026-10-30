@@ -1,14 +1,14 @@
 import * as THREE from '../vendor/three.js';
 import {GLTFLoader,mergeGeometries} from '../vendor/three.js';
-import {ground} from './height.js';
+import {ground,terrainVertexHeight,TERRAIN_TILE,TERRAIN_SEGMENTS} from './height.js';
 export function createWorld({sim,scene,ocean,$}){
-const TILE=3000,SEGMENTS=36,RADIUS=3,tiles=new Map();
+const TILE=TERRAIN_TILE,SEGMENTS=TERRAIN_SEGMENTS,RADIUS=3,tiles=new Map();
 const soil=new THREE.Color(),green=new THREE.Color(0x768968),high=new THREE.Color(0x9d9980),sand=new THREE.Color(0xb8b39a),field=new THREE.Color(0x9a9e77);
 const terrainMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true});
 function makeTile(tx,tz){
  const g=new THREE.PlaneGeometry(TILE,TILE,SEGMENTS,SEGMENTS);g.rotateX(-Math.PI/2);const p=g.attributes.position,colors=[];
  for(let i=0;i<p.count;i++){
-  const x=p.getX(i)+tx*TILE,z=p.getZ(i)+tz*TILE,h=ground(x,z);p.setY(i,h);
+  const x=p.getX(i)+tx*TILE,z=p.getZ(i)+tz*TILE,h=terrainVertexHeight(x,z);p.setY(i,h);
   soil.copy(green).lerp(high,THREE.MathUtils.smoothstep(h,130,390));
   const patch=Math.sin(Math.floor(x/300)*3.7+Math.floor(z/440)*1.8)*.5+.5;
   soil.lerp(field,patch*.43*(1-THREE.MathUtils.smoothstep(h,150,300)));
@@ -26,14 +26,8 @@ function updateTerrain(){
  for(const key of wanted)if(!tiles.has(key)){const [x,z]=key.split(',').map(Number);tiles.set(key,makeTile(x,z));}
  ocean.position.x=cx*TILE;ocean.position.z=cz*TILE;
 }
-// Match the rendered terrain triangles, not just the analytic height function.
-// This keeps roots on the mesh even on the coarser river banks.
-function surfaceHeight(x,z){
- const cell=TILE/SEGMENTS,ix=Math.floor((x+TILE/2)/cell),iz=Math.floor((z+TILE/2)/cell);
- const x0=ix*cell-TILE/2,z0=iz*cell-TILE/2,fx=(x-x0)/cell,fz=(z-z0)/cell;
- const a=ground(x0,z0),b=ground(x0+cell,z0),c=ground(x0,z0+cell),d=ground(x0+cell,z0+cell);
- return fx+fz<=1?a+(b-a)*fx+(c-a)*fz:d+(c-d)*(1-fx)+(b-d)*(1-fz);
-}
+// Shared with physics, AGL and atmosphere.
+const surfaceHeight=ground;
 const TREE_TILE=600,TREE_RADIUS=3,treeTiles=new Map(),treeTemplates=[],treeStats={pine:0,canopy:0};
 let treeX=Infinity,treeZ=Infinity;
 function randomFor(x,z){let n=(Math.imul(x,73856093)^Math.imul(z,19349663)^16381)>>>0;return()=>{n+=0x6D2B79F5;let t=n;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
