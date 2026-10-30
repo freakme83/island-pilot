@@ -59,6 +59,13 @@ assert.equal(exported.samples.length,2);assert.ok(exported.summary.stallDiagnost
 start();assert.equal(recorder.recorder.data,data);assert.match(node('recorder-message').textContent,/Export or discard/);
 discard();assert.equal(recorder.recorder.data,null);
 
+// The response control uses the existing coalesced tuning event and stop flush.
+start();node('turbulence-response').value='1.5';node('turbulence-response').handlers.input();many(13);stop();
+assert.equal(sim.turbulenceResponse,1.5);
+const responseEvent=recorder.recorder.data.events.find(e=>e.type==='tuning_changed'&&e.parameter==='turbulenceResponse');
+assert.equal(responseEvent.newValue,1.5);assert.equal(responseEvent.configuration.airflowResponse.responseScale,1.5);
+discard();sim.turbulenceResponse=1;
+
 // Developed stall, nose-down aerodynamic recovery while still descending.
 sim.reset();recorder.resetStallDiagnosticState();start();many(12,0,0,36,0);
 many(14,.45,critical+.12,21,-8);
