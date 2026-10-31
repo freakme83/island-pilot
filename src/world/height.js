@@ -1,4 +1,5 @@
 import {noise} from './noise.js';
+import {levelForRunway} from './runway.js';
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 export const WATER_LEVEL_M=19;
@@ -30,7 +31,7 @@ const reliefScale=MOUNTAIN.reliefM/peak;
 export const mountainSummit=Object.freeze({x:peakX,z:peakZ});
 export function mountainRelief(x,z){return rawMountain(x,z)*reliefScale}
 // Only mesh vertices use this analytic function. All surface consumers use ground below.
-export function terrainVertexHeight(x,z){return baseGround(x,z)+mountainRelief(x,z)}
+export function terrainVertexHeight(x,z){return levelForRunway(x,z,baseGround(x,z)+mountainRelief(x,z))}
 const vertexRows=new Map();let cacheSize=0;
 function vertex(ix,iz){
  let row=vertexRows.get(ix);if(row?.has(iz))return row.get(iz);

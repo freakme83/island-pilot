@@ -25,8 +25,9 @@ let downloaded=null;URL.createObjectURL=blob=>{downloaded=blob;return 'blob:flig
 const sim=new Flight(),keys=new Set(),renderer={domElement:node('canvas'),info:{render:{calls:17,triangles:2300}}};
 const recorder=createRecorder({sim,keys,renderer,ground,$,isPaused:()=>false});
 const cameraRig=createCamera({camera:new THREE.PerspectiveCamera(),plane:new THREE.Group(),sky:new THREE.Group(),surfaceHeight:()=>0,$});
-const keyboard=createKeyboard({keys,recordEvent:recorder.recordEvent,clearHeldControls:recorder.clearHeldControls,reset:()=>{},cameraRig,setPaused(){},setPrevious(){},setAccumulator(){}});
-const ui=createInterface({sim,atmosphere:new Atmosphere('off'),...recorder,reset:()=>{},cameraRig,renderer,$});
+const resetFlight=()=>{recorder.clearHeldControls('flight_reset');sim.reset();recorder.resetStallDiagnosticState();recorder.syncGroundContact()};
+const keyboard=createKeyboard({keys,recordEvent:recorder.recordEvent,clearHeldControls:recorder.clearHeldControls,reset:resetFlight,cameraRig,setPaused(){},setPrevious(){},setAccumulator(){}});
+const ui=createInterface({sim,atmosphere:new Atmosphere('off'),...recorder,reset:resetFlight,cameraRig,renderer,$});
 ui.updateHud(.1);assert.equal(node('heading-number').textContent,'000°');
 assert.equal(node('terrain-diagnostics').hidden,true);
 node('show-terrain-debug').checked=true;node('show-terrain-debug').handlers.change();ui.updateHud(.1);
@@ -122,5 +123,19 @@ sim.reset();recorder.resetStallDiagnosticState();recorder.recorder.maxSamples=2;
 start();many(26);assert.equal(recorder.recorder.active,false);
 assert.equal(recorder.recorder.data.events.filter(e=>e.type==='recording_stopped').length,1);
 assert.ok(recorder.recorder.data.summary);discard();
+
+// Runway start UI, exact brake key transitions, repeated mode reset and Fighter gating.
+recorder.recorder.maxSamples=12000;node('start-mode').value='runway';node('start-mode').handlers.change();
+assert.equal(sim.startMode,'runway');assert.equal(sim.groundState.contact,true);assert.equal(sim.throttle,0);
+ui.updateHud(.1);assert.equal(node('ground-status').hidden,false);assert.equal(node('ground-phase').textContent,'STATIONARY');
+start();key('keydown','KeyB');key('keydown','KeyB',true);assert.equal(keyboard.controls().brake,1);
+for(let i=0;i<25;i++){const didReset=sim.step(1/120,keyboard.controls());recorder.recordTick(didReset,1/120)}
+ui.updateHud(.1);assert.equal(node('ground-brake').hidden,false);key('keyup','KeyB');stop();
+assert.equal(recorder.recorder.data.events.filter(e=>e.type==='key_down'&&e.physicalKey==='KeyB').length,1);
+assert.equal(recorder.recorder.data.events.filter(e=>e.type==='key_up'&&e.physicalKey==='KeyB').length,1);
+node('record-export').click();const runwayJson=JSON.parse(await downloaded.text());assert.equal(runwayJson.initialConfiguration.startMode,'runway');assert.equal(runwayJson.samples[0].groundHandling.brakeInput,1);discard();
+sim.throttle=.5;key('keydown','KeyR');assert.equal(sim.throttle,0);assert.equal(sim.groundState.contact,true);
+node('profile').value='fighter';node('profile').handlers.change();assert.equal(sim.startMode,'airborne');assert.equal(node('runway-start-option').disabled,true);
+node('profile').value='bush';node('profile').handlers.change();assert.equal(node('runway-start-option').disabled,false);assert.equal(sim.startMode,'airborne');
 URL.createObjectURL=originalCreate;URL.revokeObjectURL=originalRevoke;
 console.log('runtime reliability: recorder lifecycle, recovery summaries, export, keyboard, diagnostics and camera presets passed');

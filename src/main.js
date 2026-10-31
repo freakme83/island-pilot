@@ -21,10 +21,10 @@ let cameraRig;
 const aircraft=createAircraft({sim,scene,$,onLoaded:()=>cameraRig.syncCamera(true)});
 cameraRig=createCamera({camera,plane:aircraft.plane,sky,surfaceHeight:world.surfaceHeight,$});
 function reset(){
- flightRecorder.clearHeldControls('flight_reset');sim.reset();flightRecorder.resetStallDiagnosticState();
+ flightRecorder.clearHeldControls('flight_reset');sim.reset();flightRecorder.resetStallDiagnosticState();flightRecorder.syncGroundContact();
  accumulator=0;aircraft.plane.position.copy(sim.p);aircraft.plane.quaternion.copy(sim.q);
  world.updateTerrain();world.updateTrees();cameraRig.syncCamera(true);
- flightRecorder.recordEvent('flight_reset',{cause:'manual'});
+ flightRecorder.recordEvent('flight_reset',{cause:'manual',startMode:sim.startMode});
 }
 const keyboard=createKeyboard({keys,recordEvent:flightRecorder.recordEvent,clearHeldControls:flightRecorder.clearHeldControls,reset,cameraRig,setPaused:v=>{paused=v},setPrevious:v=>{previous=v},setAccumulator:v=>{accumulator=v}});
 const ui=createInterface({sim,atmosphere,...flightRecorder,reset,cameraRig,renderer,$});
@@ -51,4 +51,4 @@ function animate(now){
  renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
-window.flightLab={recorder:flightRecorder.recorder,getState:()=>({ready:aircraft.loaded,speed:flightRecorder.stateSnapshot().airspeedMps,altitude:sim.p.y-ground(sim.p.x,sim.p.z),vertical:sim.v.y,throttle:sim.throttle,stall:sim.stall,stallDiagnostics:flightRecorder.stateSnapshot().stallDiagnostics,position:sim.p.toArray(),quaternion:sim.q.toArray(),profile:sim.profileId,atmosphere:atmosphere.config(),wind:atmosphere.wind.toArray(),camera:{...cameraRig.cameraSettings,actualDistance:camera.position.distanceTo(aircraft.plane.position),preset:cameraRig.presetIndex},trees:{...world.treeStats},tuning:{...sim.tuning},meshes:renderer.info.render.calls,triangles:renderer.info.render.triangles}),reset};
+window.flightLab={recorder:flightRecorder.recorder,getState:()=>({ready:aircraft.loaded,speed:flightRecorder.stateSnapshot().airspeedMps,altitude:sim.p.y-ground(sim.p.x,sim.p.z),vertical:sim.v.y,throttle:sim.throttle,stall:sim.stall,stallDiagnostics:flightRecorder.stateSnapshot().stallDiagnostics,position:sim.p.toArray(),quaternion:sim.q.toArray(),profile:sim.profileId,startMode:sim.startMode,groundHandling:{...sim.groundState},atmosphere:atmosphere.config(),wind:atmosphere.wind.toArray(),camera:{...cameraRig.cameraSettings,actualDistance:camera.position.distanceTo(aircraft.plane.position),preset:cameraRig.presetIndex},trees:{...world.treeStats},tuning:{...sim.tuning},meshes:renderer.info.render.calls,triangles:renderer.info.render.triangles}),reset};

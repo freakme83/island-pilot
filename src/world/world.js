@@ -1,10 +1,20 @@
 import * as THREE from '../vendor/three.js';
 import {GLTFLoader,mergeGeometries} from '../vendor/three.js';
 import {ground,terrainVertexHeight,TERRAIN_TILE,TERRAIN_SEGMENTS} from './height.js';
+import {RUNWAY,runwayContains} from './runway.js';
 export function createWorld({sim,scene,ocean,$}){
 const TILE=TERRAIN_TILE,SEGMENTS=TERRAIN_SEGMENTS,RADIUS=3,tiles=new Map();
 const soil=new THREE.Color(),green=new THREE.Color(0x768968),high=new THREE.Color(0x9d9980),sand=new THREE.Color(0xb8b39a),field=new THREE.Color(0x9a9e77);
 const terrainMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true});
+// Two static draw calls: asphalt and merged paint. Both sit on the shared plateau.
+const runwayGroup=new THREE.Group();runwayGroup.position.set(RUNWAY.x,RUNWAY.elevationM+.01,RUNWAY.z);
+const asphalt=new THREE.Mesh(new THREE.PlaneGeometry(RUNWAY.widthM,RUNWAY.lengthM).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({color:0x414849,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));runwayGroup.add(asphalt);
+const paint=[];
+function marking(width,length,x,z){const g=new THREE.PlaneGeometry(width,length);g.rotateX(-Math.PI/2);g.translate(x,.015,z);paint.push(g)}
+for(let z=-520;z<=520;z+=60)marking(.65,20,0,z);
+for(const x of [-19,19])marking(.25,1160,x,0);
+for(const z of [-565,565])for(const x of [-12,-8,-4,4,8,12])marking(1.8,15,x,z);
+const paintGeometry=mergeGeometries(paint,false);paint.forEach(g=>g.dispose());runwayGroup.add(new THREE.Mesh(paintGeometry,new THREE.MeshStandardMaterial({color:0xd8d9cf,roughness:1})));scene.add(runwayGroup);
 function makeTile(tx,tz){
  const g=new THREE.PlaneGeometry(TILE,TILE,SEGMENTS,SEGMENTS);g.rotateX(-Math.PI/2);const p=g.attributes.position,colors=[];
  for(let i=0;i<p.count;i++){
@@ -40,7 +50,7 @@ function makeTreeTile(tx,tz){
   const density=.055+.64*THREE.MathUtils.smoothstep(woods,.38,.77)+.13*THREE.MathUtils.smoothstep(patch,.82,.98);
   const corridor=Math.abs(x-(850+230*Math.sin(z*.00065)));
   const slope=Math.hypot(surfaceHeight(x+5,z)-h,surfaceHeight(x,z+5)-h)/5;
-  if(random()>density||h<35||corridor<55||slope>.48)continue;
+  if(random()>density||h<35||corridor<55||slope>.48||runwayContains(x,z,12))continue;
   const species=random()<(woods>.62?.7:.42)?0:1;
   positions[species].push({x:x-tx*TREE_TILE,z:z-tz*TREE_TILE,y:h,scale:.85+random()*.65,yaw:random()*Math.PI*2,tint:.9+random()*.18});
  }

@@ -1,6 +1,6 @@
-export const controlKeys={KeyW:'W',KeyA:'A',KeyS:'S',KeyD:'D',KeyQ:'Q',KeyE:'E',ShiftLeft:'Shift',ShiftRight:'Shift',ControlLeft:'Ctrl',ControlRight:'Ctrl'};
+export const controlKeys={KeyW:'W',KeyA:'A',KeyS:'S',KeyD:'D',KeyQ:'Q',KeyE:'E',KeyB:'Brake',ShiftLeft:'Shift',ShiftRight:'Shift',ControlLeft:'Ctrl',ControlRight:'Ctrl'};
 export function createKeyboard({keys,recordEvent,clearHeldControls,reset,cameraRig,setPaused,setPrevious,setAccumulator}){
-const gameplay=new Set(['KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyC','KeyR']);
+const gameplay=new Set(['KeyW','KeyS','KeyA','KeyD','KeyQ','KeyE','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyC','KeyR','KeyB']);
 window.addEventListener('keydown',e=>{
  if(!gameplay.has(e.code))return;e.preventDefault();
  if(e.code==='KeyR'){if(!e.repeat)reset();return;}
@@ -11,7 +11,7 @@ window.addEventListener('keyup',e=>{if(gameplay.has(e.code)){e.preventDefault();
 window.addEventListener('blur',()=>{clearHeldControls('window_blur');setPaused(true);});
 window.addEventListener('focus',()=>{setPaused(false);setPrevious(performance.now());});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)clearHeldControls('document_hidden');setPaused(document.hidden);setPrevious(performance.now());setAccumulator(0);});
-function controls(){return {pitch:+keys.has('KeyW')-keys.has('KeyS'),roll:+keys.has('KeyD')-keys.has('KeyA'),yaw:+keys.has('KeyE')-keys.has('KeyQ'),throttle:+(keys.has('ShiftLeft')||keys.has('ShiftRight'))-(keys.has('ControlLeft')||keys.has('ControlRight'))};}
+function controls(){return {pitch:+keys.has('KeyW')-keys.has('KeyS'),roll:+keys.has('KeyD')-keys.has('KeyA'),yaw:+keys.has('KeyE')-keys.has('KeyQ'),brake:+keys.has('KeyB'),throttle:+(keys.has('ShiftLeft')||keys.has('ShiftRight'))-(keys.has('ControlLeft')||keys.has('ControlRight'))};}
 
 return {controls};
 }
