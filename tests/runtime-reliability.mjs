@@ -46,10 +46,10 @@ const discard=()=>node('record-discard').click();
 const key=(type,code,repeat=false)=>events.get(type)[0]({code,repeat,preventDefault(){}});
 const critical=sim.profile.critical;
 // Arrow throttle aliases use the held-key path and leave native form keys alone.
-key('keydown','ArrowUp');assert.equal(keyboard.controls().throttle,1);key('keydown','ShiftLeft');key('keyup','ArrowUp');assert.equal(keyboard.controls().throttle,1);key('keyup','ShiftLeft');
+key('keydown','ArrowUp');assert.equal(keyboard.controls().throttle,1);assert.ok(keyboard.getDebugState().heldGameplayKeys.includes('ArrowUp'));assert.equal(keyboard.getDebugState().lastGameplayKeydown.code,'ArrowUp');key('keydown','ShiftLeft');key('keyup','ArrowUp');assert.equal(keyboard.controls().throttle,1);key('keyup','ShiftLeft');
 key('keydown','ArrowDown');assert.equal(keyboard.controls().throttle,-1);key('keyup','ArrowDown');
 let prevented=false;document.activeElement={closest:()=>node('native-select')};
-events.get('keydown')[0]({code:'ArrowUp',repeat:false,preventDefault(){prevented=true}});assert.equal(prevented,false);assert.equal(keyboard.controls().throttle,0);
+events.get('keydown')[0]({code:'ArrowUp',repeat:false,preventDefault(){prevented=true}});assert.equal(prevented,false);assert.equal(keyboard.controls().throttle,0);assert.ok(!keyboard.getDebugState().heldGameplayKeys.includes('ArrowUp'));
 document.activeElement=null;key('keydown','ArrowUp');document.activeElement={closest:()=>node('native-select')};events.get('focusin')[0]();assert.equal(keyboard.controls().throttle,0);document.activeElement=null;
 
 
