@@ -199,3 +199,19 @@ The atmosphere regression isolates the V2.1 field without the optional terrain e
 At PR head `857cd85`, the same Bush comparison measured Light max/RMS bank 0.42°/0.22°, pitch range 0.70°, altitude deviation 1.10 m; Breezy 0.78°/0.41°, 1.35°, 2.56 m. The revised runs therefore exercise attitude and flight-path corrections substantially more. Stronger settings do not imply every trajectory statistic increases: different paths cross different air, and signed disturbances can cancel. The printed runs stayed finite with no stalls or ground resets. Additional 90-second runs for seeds 1, 223344 and 98765 stayed out of stall; unattended Breezy Bush bank reached 25.8° in one run, so active piloting matters.
 
 These numerical results establish reproducibility and response, not gameplay quality. Desktop hands-on testing and rendered UI inspection were unavailable in the implementation environment. Review Light and Breezy locally, reset with R between comparisons, and export recordings to assess whether corrections feel useful and controllable.
+
+## Rendering diagnostics (developer console)
+
+The temporary `window.renderDiagnostics` API changes render objects only; defaults match the normal scene and `reset()` restores them. It is not persisted and adds no panel or rendering pass. In Comet DevTools Console:
+
+```js
+renderDiagnostics.getState()
+renderDiagnostics.setRunwayVisualOffset(0)     // repeat with 0.05, 0.2, 0.5 m
+renderDiagnostics.setCameraNear(0.25)          // repeat with 0.5, 1 m
+renderDiagnostics.setTerrainVisible(false)     // restore true before next comparison
+renderDiagnostics.setWaterVisible(false)       // restore true before next comparison
+renderDiagnostics.setRunwayPaintVisible(false) // asphalt remains visible
+renderDiagnostics.reset()
+```
+
+Use `getState()` to note offset, camera clipping, context depth bits, antialias/sample information and renderer draw/triangle counts. Context values come from the active WebGL context; unsupported or unavailable values are `null`. Test one variable at a time and call `reset()` between groups. For shoreline comparison, use the original airborne start near the coast, compare near plane first, then hide/show water or terrain independently. The runway offset is a temporary visual separation test only; do not interpret it as a proposed physical runway-height change. A browser/WebGL visual pass is still needed on the target Mac.

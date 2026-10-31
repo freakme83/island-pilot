@@ -4,11 +4,12 @@ import {ground,terrainVertexHeight,TERRAIN_TILE,TERRAIN_SEGMENTS} from './height
 import {RUNWAY,runwayContains} from './runway.js';
 export function createWorld({sim,scene,ocean,$}){
 const TILE=TERRAIN_TILE,SEGMENTS=TERRAIN_SEGMENTS,RADIUS=3,tiles=new Map();
+let terrainVisible=true;
 const soil=new THREE.Color(),green=new THREE.Color(0x768968),high=new THREE.Color(0x9d9980),sand=new THREE.Color(0xb8b39a),field=new THREE.Color(0x9a9e77);
 const terrainMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true});
 // Two static draw calls. Color variation is baked once into broad asphalt
 // patches; the paint has its own depth bias, while normal depth occlusion stays on.
-const runwayGroup=new THREE.Group();runwayGroup.position.set(RUNWAY.x,RUNWAY.elevationM+.01,RUNWAY.z);
+const runwayGroup=new THREE.Group(),runwayVisualBaseY=RUNWAY.elevationM+.01;runwayGroup.position.set(RUNWAY.x,runwayVisualBaseY,RUNWAY.z);
 const asphaltGeometry=new THREE.PlaneGeometry(RUNWAY.widthM,RUNWAY.lengthM,8,120).rotateX(-Math.PI/2),asphaltColors=[],asphaltTint=new THREE.Color();
 for(let i=0;i<asphaltGeometry.attributes.position.count;i++){
  const p=asphaltGeometry.attributes.position,x=p.getX(i),z=p.getZ(i);
@@ -23,7 +24,7 @@ function marking(width,length,x,z){const g=new THREE.PlaneGeometry(width,length)
 for(let z=-520;z<=520;z+=60)marking(.65,20,0,z);
 for(const x of [-19,19])marking(.25,1160,x,0);
 for(const z of [-565,565])for(const x of [-12,-8,-4,4,8,12])marking(1.8,15,x,z);
-const paintGeometry=mergeGeometries(paint,false);paint.forEach(g=>g.dispose());paintGeometry.computeBoundingSphere();runwayGroup.add(new THREE.Mesh(paintGeometry,new THREE.MeshStandardMaterial({color:0xd8d9cf,roughness:1,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));scene.add(runwayGroup);
+const paintGeometry=mergeGeometries(paint,false);paint.forEach(g=>g.dispose());paintGeometry.computeBoundingSphere();const runwayPaint=new THREE.Mesh(paintGeometry,new THREE.MeshStandardMaterial({color:0xd8d9cf,roughness:1,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));runwayGroup.add(runwayPaint);scene.add(runwayGroup);
 function makeTile(tx,tz){
  const g=new THREE.PlaneGeometry(TILE,TILE,SEGMENTS,SEGMENTS);g.rotateX(-Math.PI/2);const p=g.attributes.position,colors=[];
  for(let i=0;i<p.count;i++){
@@ -35,9 +36,13 @@ function makeTile(tx,tz){
   colors.push(soil.r,soil.g,soil.b);
  }
  g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));g.computeVertexNormals();
- const m=new THREE.Mesh(g,terrainMat);m.position.set(tx*TILE,0,tz*TILE);scene.add(m);return m;
+ const m=new THREE.Mesh(g,terrainMat);m.position.set(tx*TILE,0,tz*TILE);m.visible=terrainVisible;scene.add(m);return m;
 }
 let tileX=Infinity,tileZ=Infinity;
+function setTerrainVisible(visible){terrainVisible=visible;for(const mesh of tiles.values())mesh.visible=visible}
+function setWaterVisible(visible){ocean.visible=visible}
+function setRunwayVisualOffset(metres){runwayGroup.position.y=runwayVisualBaseY+metres}
+function setRunwayPaintVisible(visible){runwayPaint.visible=visible}
 function updateTerrain(){
  const cx=Math.round(sim.p.x/TILE),cz=Math.round(sim.p.z/TILE);if(cx===tileX&&cz===tileZ)return;tileX=cx;tileZ=cz;
  const wanted=new Set();for(let x=cx-RADIUS;x<=cx+RADIUS;x++)for(let z=cz-RADIUS;z<=cz+RADIUS;z++)wanted.add(x+','+z);
@@ -92,5 +97,5 @@ Promise.all([loadTree('./assets/models/tall-pine-tree.glb'),loadTree('./assets/m
 }).catch(error=>{console.error(error);$('error').hidden=false;$('error').textContent='Tree assets could not load. Reopen the file.';});
 updateTerrain();
 
-return {updateTerrain,updateTrees,surfaceHeight,treeStats};
+return {updateTerrain,updateTrees,surfaceHeight,treeStats,setTerrainVisible,setWaterVisible,setRunwayVisualOffset,setRunwayPaintVisible};
 }

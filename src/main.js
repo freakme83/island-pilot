@@ -2,6 +2,7 @@ import {Flight} from './physics/Flight.js';
 import {Atmosphere,ATMOSPHERE_SEED} from './physics/atmosphere.js';
 import {ground,terrain} from './world/height.js';
 import {createScene} from './rendering/scene.js';
+import {createRenderDiagnostics} from './rendering/diagnostics.js';
 import {createWorld} from './world/world.js';
 import {createAircraft} from './aircraft/aircraft.js';
 import {createCamera} from './rendering/camera.js';
@@ -51,4 +52,5 @@ function animate(now){
  renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
+window.renderDiagnostics=createRenderDiagnostics({renderer,camera,world,ocean});
 window.flightLab={recorder:flightRecorder.recorder,getState:()=>({ready:aircraft.loaded,speed:flightRecorder.stateSnapshot().airspeedMps,altitude:sim.p.y-ground(sim.p.x,sim.p.z),vertical:sim.v.y,throttle:sim.throttle,stall:sim.stall,stallDiagnostics:flightRecorder.stateSnapshot().stallDiagnostics,position:sim.p.toArray(),quaternion:sim.q.toArray(),profile:sim.profileId,startMode:sim.startMode,groundHandling:{...sim.groundState},inputDebug:{paused,documentHidden:document.hidden,aircraftLoaded:aircraft.loaded,flightTimeSec:sim.time,...keyboard.getDebugState()},atmosphere:atmosphere.config(),wind:atmosphere.wind.toArray(),camera:{...cameraRig.cameraSettings,actualDistance:camera.position.distanceTo(aircraft.plane.position),preset:cameraRig.presetIndex},trees:{...world.treeStats},tuning:{...sim.tuning},meshes:renderer.info.render.calls,triangles:renderer.info.render.triangles}),reset};
