@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.js';
 import {GLTFLoader,mergeGeometries} from '../vendor/three.js';
 import {ground,terrainVertexHeight,TERRAIN_TILE,TERRAIN_SEGMENTS} from './height.js';
-import {RUNWAY,runwayContains} from './runway.js';
+import {RUNWAY,RUNWAY_ASPHALT_DEPTH_BIAS,runwayContains} from './runway.js';
 export function createWorld({sim,scene,ocean,$}){
 const TILE=TERRAIN_TILE,SEGMENTS=TERRAIN_SEGMENTS,RADIUS=3,tiles=new Map();
 let terrainVisible=true;
@@ -18,7 +18,7 @@ for(let i=0;i<asphaltGeometry.attributes.position.count;i++){
  asphaltTint.setRGB(tone,tone,tone);asphaltColors.push(asphaltTint.r,asphaltTint.g,asphaltTint.b);
 }
 asphaltGeometry.setAttribute('color',new THREE.Float32BufferAttribute(asphaltColors,3));
-const asphalt=new THREE.Mesh(asphaltGeometry,new THREE.MeshStandardMaterial({color:0x414849,roughness:1,vertexColors:true}));runwayGroup.add(asphalt);
+const asphalt=new THREE.Mesh(asphaltGeometry,new THREE.MeshStandardMaterial({color:0x414849,roughness:1,vertexColors:true,...RUNWAY_ASPHALT_DEPTH_BIAS}));runwayGroup.add(asphalt);
 const paint=[];
 function marking(width,length,x,z){const g=new THREE.PlaneGeometry(width,length);g.rotateX(-Math.PI/2);g.translate(x,.035,z);paint.push(g)}
 for(let z=-520;z<=520;z+=60)marking(.65,20,0,z);
