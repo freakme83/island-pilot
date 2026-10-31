@@ -3,17 +3,19 @@ import {defaults,profiles} from '../config/profiles.js';
 import {ground,baseGround} from '../world/height.js';
 import {AirflowResponse} from './airflow-response.js';
 import {TerrainCollision} from './terrain-collision.js';
+import {GroundHandling} from './ground-handling.js';
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 export function engineAt(p,speed){return p.engine/(1+Math.max(0,speed-p.fadeStart)*p.fadeRate);}
 
 export class Flight {
- constructor(profileId="bush",atmosphere=null){this.atmosphere=atmosphere;this.airVelocity=new Vector3();this.airflowResponse=new AirflowResponse();this.terrainCollision=new TerrainCollision();this.lastImpact=null;this.turbulenceResponse=1;this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
+ constructor(profileId="bush",atmosphere=null){this.atmosphere=atmosphere;this.airVelocity=new Vector3();this.airflowResponse=new AirflowResponse();this.terrainCollision=new TerrainCollision();this.lastImpact=null;this.groundHandling=new GroundHandling();this.groundState=this.groundHandling.state;this.startMode='airborne';this.turbulenceResponse=1;this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
  // Single mass source for forces and approximate atmospheric inertia; future cargo can extend it.
  get massKg(){return this.profile.mass}
  selectProfile(id){if(!profiles[id])return;this.profileId=id;this.profile=profiles[id];this.tuning=this.tunings[id];this.reset();}
  restoreDefaults(){Object.assign(this.tuning,defaults);this.reset();}
- reset(){
+ reset(mode=this.startMode){
+  this.startMode=mode==='runway'&&this.profileId==='bush'?'runway':'airborne';this.groundHandling.clear();
   this.lastImpact=null;
   const p=this.profile,t=this.tuning,mass=this.massKg;
   // Preserve the original world spawn; the shared surface still enforces safe clearance.
@@ -41,6 +43,7 @@ export class Flight {
    this.throttle=clamp(drag/(Math.cos(this.trim)*engineAt(p,p.cruise)*t.thrust),0,1);
   }
   this.q.setFromAxisAngle(new Vector3(1,0,0),-this.trim);
+  if(this.startMode==='runway'){this.groundHandling.spawn(this);this.atmosphere?.reset(this.p);this.airVelocity.copy(this.v);if(this.atmosphere?.enabled)this.airVelocity.sub(this.atmosphere.wind)}
   this.previousP=this.p.clone();this.previousQ=this.q.clone();
  }
  step(dt,controls={},recover=true){
@@ -73,19 +76,22 @@ export class Flight {
   this.force.addScaledVector(this.f,thrust/mass);
   this.force.addScaledVector(this.x,-qs*p.sideForce*Math.sin(beta)/mass);
   this.force.y-=9.81;
-  this.v.addScaledVector(this.force,dt);this.p.addScaledVector(this.v,dt);
+  const wheelContact=this.groundHandling.sample(this,dt,controls);
+  if(wheelContact)this.force.addScaledVector(this.groundHandling.force,1/mass);
+  this.v.addScaledVector(this.force,dt);if(!wheelContact)this.p.addScaledVector(this.v,dt);
   // Weathercock stability + a small coordinated-turn assist; no heading snaps.
   const coordinated=-9.81*this.x.y/Math.max(speed,p.coordinationMin);
   this.w.x+=(this.input.pitch*p.pitchPower*t.pitch*authority +p.pitchStability*(alpha-this.trim)*authority+p.stallMoment*this.stall*Math.sign(alpha)-p.pitchDamping*this.w.x)*dt;
   this.w.y+=(-this.input.yaw*p.yawPower*t.yaw*authority+p.yawStability*beta*authority-p.yawDamping*(this.w.y-coordinated*p.coordination))*dt;
   this.w.z+=(this.input.roll*p.rollPower*t.roll*authority-p.rollDamping*this.w.z)*dt;
   if(this.atmosphere?.enabled){const a=this.airflowResponse.diagnostics;this.w.x+=a.pitchRadPerSec2*dt;this.w.y+=a.yawRadPerSec2*dt;this.w.z+=a.rollRadPerSec2*dt;}
+  if(wheelContact){this.w.addScaledVector(this.groundHandling.acceleration,dt);this.groundHandling.solveFriction(this,dt);this.p.addScaledVector(this.v,dt)}
   const angularSpeed=this.w.length();
   if(angularSpeed>1e-8){this.dq.setFromAxisAngle(this.dir.copy(this.w).divideScalar(angularSpeed),angularSpeed*dt);this.q.multiply(this.dq).normalize();}
   if(recover){
-   const invalid=!Number.isFinite(this.p.lengthSq()),contact=invalid?null:this.terrainCollision.sweep(this.previousP,this.previousQ,this.p,this.q);
-   if(invalid||contact){
-    const impact=contact?{positionM:[contact.centerX,contact.centerY,contact.centerZ],velocityMps:this.v.toArray(),contactPositionM:[contact.x,contact.y,contact.z],terrainHeightM:contact.terrainHeightM,surfaceHeightM:contact.heightM,surface:contact.surface,proxy:contact.proxy,sweepFraction:contact.fraction}:null;
+   const invalid=!Number.isFinite(this.p.lengthSq()),contact=invalid?null:this.terrainCollision.sweep(this.previousP,this.previousQ,this.p,this.q,this.profileId==='bush'),wheelImpact=this.groundHandling.impact;
+   if(invalid||contact||wheelImpact){
+    const impact=contact?{positionM:[contact.centerX,contact.centerY,contact.centerZ],velocityMps:this.v.toArray(),contactPositionM:[contact.x,contact.y,contact.z],terrainHeightM:contact.terrainHeightM,surfaceHeightM:contact.heightM,surface:contact.surface,proxy:contact.proxy,sweepFraction:contact.fraction}:wheelImpact;
     const n=this.resets+1;this.reset();this.resets=n;this.lastImpact=impact;return true;
    }
   }

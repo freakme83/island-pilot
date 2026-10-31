@@ -23,6 +23,7 @@ Run the small deterministic physics comparison with `node tests/physics-regressi
 | `src/config/profiles.js` | Bush and Fighter coefficients, defaults and tuning fields. Add a profile here, with a matching tuning state, selector option, and approximate airframe dimensions in `src/physics/airflow-response.js`. |
 | `src/physics/Flight.js`, `src/physics/atmosphere.js` | Original force, stall and control integration, plus the optional deterministic airflow field and differential wing/tail response. |
 | `src/world/height.js`, `src/world/world.js`, `src/world/noise.js` | Mountain/terrain source, shared mesh-height queries and gradients, deterministic noise, static tiles and tree instancing. |
+| `src/physics/ground-handling.js`, `src/world/runway.js` | Bush three-point contact/tire forces; tarmac properties, runway dimensions and shared local leveling. |
 | `src/physics/terrain-airflow.js`, `src/physics/terrain-collision.js` | Terrain-induced airflow and swept aircraft contact proxies; both consume the shared surface. |
 | `src/aircraft/aircraft.js` | Aircraft GLB, pivot, propeller and elevator visuals. |
 | `src/rendering/scene.js`, `src/rendering/camera.js`, `src/rendering/heading.js` | Lighting, sky, chase camera and horizontal heading math. |
@@ -37,6 +38,89 @@ Run the small deterministic physics comparison with `node tests/physics-regressi
 On each active animation frame, performance is sampled, then the accumulator advances in `1/120` second physics steps. Every step calls `Flight.step` followed by the recorder's `recordTick`. Afterward, the visual aircraft pose is interpolated, moving parts update, terrain and tree tiles update, the chase camera follows, the HUD refreshes when due, and the renderer draws. The recorder owns its diagnostic stall phase separately from `Flight.stall`.
 
 Shared mutable state is held by its module or factory: `Flight` owns physical state and tuning; `main.js` allocates the held-key set and keyboard updates it; recorder owns telemetry and event clocks; world owns tile caches; camera owns chase vectors and preset; `main.js` owns pause and frame timing. Factories receive the references they need. See [architecture-map.md](architecture-map.md) for the original initialization and update dependency map.
+
+## V2.3 tarmac ground-handling baseline
+
+PR #3 was verified merged; this work starts from remote `main` at `622f3e8995c63a21194e91b031ab8371e940badb`. The original airborne start remains the default. In **Flight tuning → Start position**, choose **Bush · tarmac runway** for ground testing; switching start resets the flight, and **R** repeats the selected start. Fighter keeps its existing airborne behavior and has no wheel model in this milestone.
+
+The asphalt strip is **1,200 × 40 m**, centered at **X −1000, Z −1600 m**, elevation **100 m**, aligned **000°/180°** (+Z north). Ground spawn is at `(−1000, −2100)` m, pointing north, stationary at zero throttle. The site is about 1.6 km south of the original airborne spawn and well away from the mountain. Existing terrain varied by less than 8 m along the strip. A small shared-height plateau blends into that terrain: fully flat over 220 × 1,420 m, fading out within 580 × 1,780 m. Its margins accommodate the existing 83 m terrain grid; rendering, wheel contact, collision, AGL and terrain airflow all sample the same surface. Asphalt/markings add two static draw calls, with trees excluded from the strip. There are no new assets or dependencies.
+
+**Controls:** Shift or ↑ increases throttle; Ctrl or ↓ decreases it (23 percentage points/second). Try 15–25% power to taxi. Q/E reuse the existing yaw control sense for tailwheel steering; steering angle reduces with speed. The inherited control sense is Q toward increasing heading, E toward decreasing heading. Hold **B** for wheel brakes, reduce power to stop, and use **R** to reset. W/S and A/D retain their flight controls. Choose **Airborne** to return to the original flight start. Use Off for repeatable calm comparisons, then Light to test wind; hold B while parked in gusts.
+
+`src/physics/ground-handling.js` implements a three-point **taildragger**, measured from the existing leveled Bush GLB (`wheel-l`, `wheel-r`, `wheel-tail`). Main contact points are ±1.2 m across, 1.398 m forward and 1.818 m below the flight pivot; the tailwheel is 3.952 m aft and 0.725 m below it. Reset solves the static spring balance, giving about 11.5° nose-up attitude and a pivot height of 101.468 m. Each wheel supplies positive vertical spring/damper support (70,000 N/m, 7,600 N·s/m), with bounded safe compression and descent. There is no per-step height snap or parking velocity reset. Visual gear remains unchanged; small tire penetration represents compliance.
+
+The original thrust, drag, lift, side force, atmospheric response and control equations remain active. Wheel forces share the existing mass and scalar inertia proxies. Coupled tire impulses oppose longitudinal movement and lateral slip, with each wheel limited by its current load and grip. The `tarmac` definition also temporarily supplies dry-land friction; it supplies rolling resistance `Crr = 0.018`, brake grip 0.45 and lateral grip 0.7. Brake input adds load-dependent longitudinal friction and cannot drive the aircraft backward; low-speed friction can balance small thrust without endless numerical creep. Wind changes airspeed, lift, side force and weathercocking through the existing atmosphere/aerodynamics; lateral tire grip resists floating sideways. Sustained wind can still move or turn an unbraked aircraft, and strong gusts can overcome grip.
+
+As lift develops, spring support falls, reducing rolling resistance and brake authority. Contact ceases geometrically when the wheels leave the surface; there is no takeoff-speed switch or runway glue. An uncontrolled Off/full-power run naturally lifted off near 125 km/h after about 624 m; this is an observation, **not takeoff-performance calibration**. Rotation, landings, suspension travel, propwash and low-speed aerodynamic tuning remain for V2.4/later. The legacy stall model still reports raw high-AoA/sideslip conditions at very low airspeed; the HUD suppresses flight stall cautions during loaded taxi below 8 m/s, while recorder diagnostics remain intact.
+
+Normal wheel support is separated from destructive contact. Bush airframe-only collision proxies replace the old coarse body spheres that included gear; swept nose/propeller, body, wings, tail and fin contact remains active against shared terrain/water. Excessive gear compression, gear descent above 3 m/s or water contact triggers the existing impact/reset path. Gentle dry-land wheel contact continues with provisional tarmac friction, while the actual terrain height supports the wheels. R and automatic recovery repeat the selected start. Fighter retains the original collision proxies. This is a taxi baseline, not a general terrain landing system.
+
+The compact ground strip reports selected runway start, observed contact/motion status, horizontal groundspeed in km/h and B/brake state. These statuses impose no speed limit. Recorder schema remains additive `1.0`; simulation version is `1.8`, atmosphere remains `2.2`. Initial metadata includes runway, tarmac and contact tuning. Samples add `startMode` and `groundHandling`: contact count/state, normal load/support ratio, actual rolling/braking/lateral forces, steering/brake input, surface and horizontal groundspeed. Support ratio can briefly exceed one during transients. Existing root groundspeed remains the 3D magnitude. `start_mode_changed` records selection; `wheel_contact_enter/exit` confirm 100 ms of stable contact change (including the beginning timestamp), avoiding zero-load chatter without filtering physics or raw samples. Destructive `ground_contact` events remain compatible. No per-wheel sample arrays are added.
+
+### V2.3 correction (Draft PR #4)
+
+The asphalt keeps its 1,200 × 40 m physical dimensions and height. The former asphalt material used negative polygon offset while the paint sat only 1.5 cm above it, allowing depth precision to prefer the asphalt at shallow view angles. The asphalt now uses normal depth, and the paint sits 3.5 cm above it with a small negative depth offset on the **paint**. Depth testing and writing stay enabled, so aircraft and terrain still occlude it. The merged paint bounds are computed explicitly for stable frustum culling. The same two draw calls remain. Broad, deterministic low-contrast vertex color variation (8 × 120 segments, about 1,089 vertices) adds motion reference without a texture, shader or high-frequency stripe pattern. This depth explanation is a code-level diagnosis; desktop WebGL confirmation is still needed.
+
+Outside asphalt, dry terrain now supports the three wheels using its shared mesh height. It provisionally reuses tarmac resistance and grip rather than introducing a grass model. Water still crashes, as do hard vertical arrivals and excessive gear compression. Recorder `surface` distinguishes `tarmac` and `dry-land`. At an ordinary pavement-edge excursion the local terrain plateau is continuous, so wheel support does not drop merely due to a material label.
+
+B already reaches physics reliably and uses load-bounded braking. Controlled Atmosphere Off runs at zero throttle showed continuous contact and input for every 120 Hz step. The table measures the interval until ground speed falls below 0.05 m/s; forces and normal load are averages over that interval:
+
+| Initial speed | Stop time | Distance | Average / peak brake force | Average wheel load |
+| --- | --- | --- | --- | --- |
+| 5 m/s | 1.10 s | 2.76 m | 3,121 / 3,179 N | 6,935 N |
+| 8 m/s | 1.80 s | 7.31 m | 3,030 / 3,179 N | 6,732 N |
+| 12 m/s | 2.83 s | 17.70 m | 2,831 / 3,179 N | 6,292 N |
+| 15 m/s | 3.75 s | 30.08 m | 2,613 / 3,179 N | 5,806 N |
+
+At 12 m/s with no brake, speed remained 9.78 m/s after five seconds; with full throttle **and** brake, it was 1.68 m/s after five seconds. Braking force drops as the wings unload the wheels, making a faster roll feel slower to stop. No brake coefficient was changed; the HUD now distinguishes `BRAKING` (actual >30 N) from `B HELD · NO DECEL` (little force) and `B HELD · NO LOAD` (airborne). The keyboard path was exercised through the real event handlers and recorder. Mac testing is still needed to reconcile subjective feel and visual speed cues.
+
+Arrow ↑/↓ now aliases Shift/Ctrl with the same throttle rate and bounds. Focused native inputs, selects and text areas keep arrow navigation; focus changes release an already held arrow throttle key, and blur/visibility cleanup still applies. The help text and input-event labels reflect the aliases.
+
+### Focused validation
+
+All five existing/new Node checks pass. Physics fixtures retain all eight exact Bush and Fighter checkpoints. V2.2 mountain height, mesh agreement, airflow reversal, swept collision and terrain recorder checks pass unchanged. The new ground check covers static contact, thrust, load-dependent rolling/brakes, mirrored steering, crosswind grip, natural unloading/liftoff, no airborne brake effect, safe/unsafe collision separation, both start/reset modes and additive recorder export. The interface harness exercises start selection, B key transitions/indicator/export, R reset and Fighter restrictions; it does not render WebGL.
+
+| Deterministic Bush check (120 Hz, seed 17391) | Measured result |
+| --- | --- |
+| Off, zero throttle, parked 60 s | 0.046 mm position drift; three loaded wheels |
+| Off, 20% / 40% throttle after 30 s | 5.44 / 12.87 m/s groundspeed |
+| Off, brake from 8 m/s | Below 0.05 m/s at 1.80 s; 7.30 m travel; 5.6 mm spring-settling rollback |
+| Off, Q/E for 3 s from 3 m/s | Mirrored ±29.97° heading change; bounded roll |
+| 8 m/s steady crosswind, 10 s taxi | 3.98 m cross-track change; 18.45° weathercock heading change |
+| Light, braked parking 60 s | Less than 2 cm displacement |
+| Off, full-power natural unloading | First raw liftoff at 31.52 s, 34.72 m/s, 623.91 m run; one confirmed exit event |
+
+Actual browser playtesting was **not completed**: no local Chromium executable was available, and the separate remote browser returned an authentication error instead of reaching this workspace's HTTP server. The runway's rendered appearance, FPS, camera feel and subjective taxi handling still need the desktop checks below. These numerical results establish behavior and regression coverage, not gameplay quality.
+
+### Mac testing
+
+With the existing Desktop clone, fetch/switch/update this feature branch and serve the repository root (Python 3 required):
+
+```sh
+cd ~/Desktop/island-pilot
+git fetch origin
+git switch feat/ground-handling-v2-3
+git pull --ff-only origin feat/ground-handling-v2-3
+python3 -m http.server 8000
+```
+
+In a second Terminal window:
+
+```sh
+open http://localhost:8000/
+```
+
+Choose Bush, Atmosphere Off and the tarmac start. Check stationary wheels, then add 15–25% power, steer gently with Q/E, reduce power and hold B. Reset between tests. Compare Light/headwind/crosswind with the ground and terrain diagnostics and 10 Hz recorder. Try higher power on the centerline to observe reduced support; takeoff handling is uncalibrated. Test a gentle pavement-edge excursion, then select Airborne and fly toward the V2.2 mountain (about heading 032° from the original spawn). Confirm Fighter airborne controls and recorder still work. Quit the server with Ctrl+C.
+
+For code-level checks (Node 18+; no install required):
+
+```sh
+node tests/physics-regression.mjs
+node tests/runtime-reliability.mjs
+node tests/atmosphere-regression.mjs
+node tests/terrain-regression.mjs
+node tests/ground-regression.mjs
+```
 
 ## V2.2 mountain and terrain airflow
 
@@ -115,3 +199,19 @@ The atmosphere regression isolates the V2.1 field without the optional terrain e
 At PR head `857cd85`, the same Bush comparison measured Light max/RMS bank 0.42°/0.22°, pitch range 0.70°, altitude deviation 1.10 m; Breezy 0.78°/0.41°, 1.35°, 2.56 m. The revised runs therefore exercise attitude and flight-path corrections substantially more. Stronger settings do not imply every trajectory statistic increases: different paths cross different air, and signed disturbances can cancel. The printed runs stayed finite with no stalls or ground resets. Additional 90-second runs for seeds 1, 223344 and 98765 stayed out of stall; unattended Breezy Bush bank reached 25.8° in one run, so active piloting matters.
 
 These numerical results establish reproducibility and response, not gameplay quality. Desktop hands-on testing and rendered UI inspection were unavailable in the implementation environment. Review Light and Breezy locally, reset with R between comparisons, and export recordings to assess whether corrections feel useful and controllable.
+
+## Rendering diagnostics (developer console)
+
+The temporary `window.renderDiagnostics` API changes render objects only; defaults match the normal scene and `reset()` restores them. It is not persisted and adds no panel or rendering pass. In Comet DevTools Console:
+
+```js
+renderDiagnostics.getState()
+renderDiagnostics.setRunwayVisualOffset(0)     // repeat with 0.05, 0.2, 0.5 m
+renderDiagnostics.setCameraNear(0.25)          // repeat with 0.5, 1 m
+renderDiagnostics.setTerrainVisible(false)     // restore true before next comparison
+renderDiagnostics.setWaterVisible(false)       // restore true before next comparison
+renderDiagnostics.setRunwayPaintVisible(false) // asphalt remains visible
+renderDiagnostics.reset()
+```
+
+Use `getState()` to note offset, camera clipping, context depth bits, antialias/sample information and renderer draw/triangle counts. Context values come from the active WebGL context; unsupported or unavailable values are `null`. Test one variable at a time and call `reset()` between groups. For shoreline comparison, use the original airborne start near the coast, compare near plane first, then hide/show water or terrain independently. The runway offset is a temporary visual separation test only; do not interpret it as a proposed physical runway-height change. A browser/WebGL visual pass is still needed on the target Mac.

@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {createRenderDiagnostics} from '../src/rendering/diagnostics.js';
+const calls=[];const world={setRunwayVisualOffset:v=>calls.push(['offset',v]),setTerrainVisible:v=>calls.push(['terrain',v]),setWaterVisible:v=>calls.push(['water',v]),setRunwayPaintVisible:v=>calls.push(['paint',v])};
+const camera={near:.25,far:40000,updates:0,updateProjectionMatrix(){this.updates++}};
+const gl={DEPTH_BITS:1,SAMPLES:2,isContextLost:()=>false,getContextAttributes:()=>({antialias:true}),getParameter:k=>k===1?24:4};
+const renderer={getContext:()=>gl,info:{render:{calls:2,triangles:800}}};
+const d=createRenderDiagnostics({renderer,camera,world});
+assert.deepEqual(d.getState(),{runwayVisualOffsetM:0,cameraNearM:.25,cameraFarM:40000,terrainVisible:true,waterVisible:true,runwayPaintVisible:true,depthBits:24,antialias:true,samples:4,drawCalls:2,triangles:800});
+d.setRunwayVisualOffset(.2);assert.deepEqual(calls.at(-1),['offset',.2]);assert.equal(d.getState().runwayVisualOffsetM,.2);
+d.setCameraNear(.5);assert.equal(camera.near,.5);assert.equal(camera.far,40000);assert.equal(camera.updates,1);
+d.setTerrainVisible(false);d.setWaterVisible(false);d.setRunwayPaintVisible(false);assert.deepEqual(d.getState(),{runwayVisualOffsetM:.2,cameraNearM:.5,cameraFarM:40000,terrainVisible:false,waterVisible:false,runwayPaintVisible:false,depthBits:24,antialias:true,samples:4,drawCalls:2,triangles:800});
+for(const value of [NaN,Infinity,-.01,.51])assert.throws(()=>d.setRunwayVisualOffset(value));
+for(const value of [NaN,Infinity,.09,1.01])assert.throws(()=>d.setCameraNear(value));
+for(const fn of [d.setTerrainVisible,d.setWaterVisible,d.setRunwayPaintVisible])assert.throws(()=>fn(1));
+d.reset();assert.equal(camera.near,.25);assert.deepEqual(calls.slice(-4),[['offset',0],['terrain',true],['water',true],['paint',true]]);assert.deepEqual({near:d.getState().cameraNearM,far:d.getState().cameraFarM,terrain:d.getState().terrainVisible,water:d.getState().waterVisible,paint:d.getState().runwayPaintVisible,offset:d.getState().runwayVisualOffsetM},{near:.25,far:40000,terrain:true,water:true,paint:true,offset:0});
+const unavailable=createRenderDiagnostics({renderer:{getContext:()=>null,info:{}},camera:{near:.25,far:40000,updateProjectionMatrix(){}},world});assert.equal(unavailable.getState().depthBits,null);assert.equal(unavailable.getState().antialias,null);assert.equal(unavailable.getState().samples,null);assert.equal(unavailable.getState().drawCalls,null);
+console.log('render diagnostics defaults, actual context metadata, independent setters, validation and reset passed');
