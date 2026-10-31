@@ -32,19 +32,20 @@ export class GroundHandling {
   const speed=Math.hypot(sim.v.x,sim.v.z),target=sim.input.yaw*t.tailSteerRad/(1+(speed/6)**2);this.steerAngle+=(target-this.steerAngle)*(1-Math.exp(-dt*6));s.steerAngleDeg=this.steerAngle*180/Math.PI;
   this.worldOmega.copy(sim.w).applyQuaternion(sim.q);
   for(const w of this.wheels){
-   w.load=0;w.longJ=0;w.sideJ=0;w.arm.copy(w.offset).applyQuaternion(sim.q);w.position.copy(sim.p).add(w.arm);w.material=surfaceAt(w.position.x,w.position.z);
-   const height=Math.max(WATER_LEVEL_M,ground(w.position.x,w.position.z)),compression=height-w.position.y;
+   w.load=0;w.longJ=0;w.sideJ=0;w.arm.copy(w.offset).applyQuaternion(sim.q);w.position.copy(sim.p).add(w.arm);w.material=surfaceAt(w.position.x,w.position.z)||TARMAC;
+   const terrainHeight=ground(w.position.x,w.position.z),water=terrainHeight<=WATER_LEVEL_M;
+   const height=Math.max(WATER_LEVEL_M,terrainHeight),compression=height-w.position.y;
    this.pointVelocity.crossVectors(this.worldOmega,w.arm).add(sim.v);
    if(compression>=0){
-    if(!w.material||compression>t.maxCompressionM||this.pointVelocity.y < -t.maxContactDescentMps){
-     if(!this.impact)this.impact={positionM:sim.p.toArray(),velocityMps:sim.v.toArray(),contactPositionM:[w.position.x,height,w.position.z],terrainHeightM:ground(w.position.x,w.position.z),surfaceHeightM:height,surface:height===WATER_LEVEL_M?'water':'terrain',proxy:w.tail?'tailwheel':'main wheel',reason:w.material?'hard_gear_contact':'unsupported_surface',sweepFraction:0};continue;
+    if(water||compression>t.maxCompressionM||this.pointVelocity.y < -t.maxContactDescentMps){
+     if(!this.impact)this.impact={positionM:sim.p.toArray(),velocityMps:sim.v.toArray(),contactPositionM:[w.position.x,height,w.position.z],terrainHeightM:terrainHeight,surfaceHeightM:height,surface:water?'water':'terrain',proxy:w.tail?'tailwheel':'main wheel',reason:water?'water_contact':'hard_gear_contact',sweepFraction:0};continue;
     }
     w.load=Math.max(0,t.springNPerM*compression-t.damperNsPerM*this.pointVelocity.y);
    }
    if(w.load>1){s.wheelsContacting++;s.normalForceN+=w.load;this.force.y+=w.load;this.cross.set(0,w.load,0);this.torque.add(this.localTorque.crossVectors(w.arm,this.cross));}
    const angle=w.tail?this.steerAngle:0;w.forward.set(Math.sin(angle),0,Math.cos(angle)).applyQuaternion(sim.q);w.forward.y=0;w.forward.normalize();w.side.set(w.forward.z,0,-w.forward.x);
   }
-  s.contact=s.wheelsContacting>0;s.supportRatio=s.normalForceN/(sim.massKg*9.81);s.surface=s.contact?'tarmac':null;s.status=s.contact?(speed<.3?'STATIONARY':speed<8?'TAXI':'GROUND ROLL'):'AIRBORNE';
+  s.contact=s.wheelsContacting>0;s.supportRatio=s.normalForceN/(sim.massKg*9.81);s.surface=s.contact?(this.wheels.some(w=>w.load>1&&!surfaceAt(w.position.x,w.position.z))?'dry-land':'tarmac'):null;s.status=s.contact?(speed<.3?'STATIONARY':speed<8?'TAXI':'GROUND ROLL'):'AIRBORNE';
   if(s.contact){const i=sim.airflowResponse.diagnostics;this.localTorque.copy(this.torque).applyQuaternion(sim.inv);this.acceleration.set(this.localTorque.x/i.pitchInertiaKgM2,this.localTorque.y/i.yawInertiaKgM2,this.localTorque.z/i.rollInertiaKgM2)}
   return s.contact;
  }

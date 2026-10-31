@@ -16,7 +16,7 @@ function node(id=''){
  return nodes.get(id);
 }
 const $=node;
-globalThis.document={hidden:false,createElement:()=>node('created-'+created++),querySelectorAll:()=>[],addEventListener(){}};
+globalThis.document={hidden:false,activeElement:null,createElement:()=>node('created-'+created++),querySelectorAll:()=>[],addEventListener(type,fn){(events.get(type)??events.set(type,[]).get(type)).push(fn)}};
 globalThis.window={addEventListener(type,fn){(events.get(type)??events.set(type,[]).get(type)).push(fn)}};
 globalThis.HTMLButtonElement=class {};HTMLButtonElement.prototype.commandForElement=null;
 globalThis.HTMLElement=class {};HTMLElement.prototype.popover=null;
@@ -45,6 +45,13 @@ const start=()=>node('record-start').click(),stop=()=>node('record-stop').click(
 const discard=()=>node('record-discard').click();
 const key=(type,code,repeat=false)=>events.get(type)[0]({code,repeat,preventDefault(){}});
 const critical=sim.profile.critical;
+// Arrow throttle aliases use the held-key path and leave native form keys alone.
+key('keydown','ArrowUp');assert.equal(keyboard.controls().throttle,1);key('keydown','ShiftLeft');key('keyup','ArrowUp');assert.equal(keyboard.controls().throttle,1);key('keyup','ShiftLeft');
+key('keydown','ArrowDown');assert.equal(keyboard.controls().throttle,-1);key('keyup','ArrowDown');
+let prevented=false;document.activeElement={closest:()=>node('native-select')};
+events.get('keydown')[0]({code:'ArrowUp',repeat:false,preventDefault(){prevented=true}});assert.equal(prevented,false);assert.equal(keyboard.controls().throttle,0);
+document.activeElement=null;key('keydown','ArrowUp');document.activeElement={closest:()=>node('native-select')};events.get('focusin')[0]();assert.equal(keyboard.controls().throttle,0);document.activeElement=null;
+
 
 assert.equal(cameraRig.presetIndex,0);cameraRig.syncCamera(true);
 key('keydown','KeyC');assert.equal(cameraRig.presetIndex,1);assert.equal(cameraRig.cameraSettings.distance,38);
@@ -130,7 +137,7 @@ assert.equal(sim.startMode,'runway');assert.equal(sim.groundState.contact,true);
 ui.updateHud(.1);assert.equal(node('ground-status').hidden,false);assert.equal(node('ground-phase').textContent,'STATIONARY');
 start();key('keydown','KeyB');key('keydown','KeyB',true);assert.equal(keyboard.controls().brake,1);
 for(let i=0;i<25;i++){const didReset=sim.step(1/120,keyboard.controls());recorder.recordTick(didReset,1/120)}
-ui.updateHud(.1);assert.equal(node('ground-brake').hidden,false);key('keyup','KeyB');stop();
+ui.updateHud(.1);assert.equal(node('ground-brake').hidden,false);assert.match(node('ground-brake').textContent,/B HELD/);sim.v.z=5;sim.step(1/120,keyboard.controls());ui.updateHud(.1);assert.equal(node('ground-brake').textContent,'BRAKING');key('keyup','KeyB');stop();
 assert.equal(recorder.recorder.data.events.filter(e=>e.type==='key_down'&&e.physicalKey==='KeyB').length,1);
 assert.equal(recorder.recorder.data.events.filter(e=>e.type==='key_up'&&e.physicalKey==='KeyB').length,1);
 node('record-export').click();const runwayJson=JSON.parse(await downloaded.text());assert.equal(runwayJson.initialConfiguration.startMode,'runway');assert.equal(runwayJson.samples[0].groundHandling.brakeInput,1);discard();

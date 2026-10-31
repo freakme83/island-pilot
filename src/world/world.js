@@ -6,15 +6,24 @@ export function createWorld({sim,scene,ocean,$}){
 const TILE=TERRAIN_TILE,SEGMENTS=TERRAIN_SEGMENTS,RADIUS=3,tiles=new Map();
 const soil=new THREE.Color(),green=new THREE.Color(0x768968),high=new THREE.Color(0x9d9980),sand=new THREE.Color(0xb8b39a),field=new THREE.Color(0x9a9e77);
 const terrainMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,flatShading:true});
-// Two static draw calls: asphalt and merged paint. Both sit on the shared plateau.
+// Two static draw calls. Color variation is baked once into broad asphalt
+// patches; the paint has its own depth bias, while normal depth occlusion stays on.
 const runwayGroup=new THREE.Group();runwayGroup.position.set(RUNWAY.x,RUNWAY.elevationM+.01,RUNWAY.z);
-const asphalt=new THREE.Mesh(new THREE.PlaneGeometry(RUNWAY.widthM,RUNWAY.lengthM).rotateX(-Math.PI/2),new THREE.MeshStandardMaterial({color:0x414849,roughness:1,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));runwayGroup.add(asphalt);
+const asphaltGeometry=new THREE.PlaneGeometry(RUNWAY.widthM,RUNWAY.lengthM,8,120).rotateX(-Math.PI/2),asphaltColors=[],asphaltTint=new THREE.Color();
+for(let i=0;i<asphaltGeometry.attributes.position.count;i++){
+ const p=asphaltGeometry.attributes.position,x=p.getX(i),z=p.getZ(i);
+ const grain=Math.sin(x*12.9898+z*78.233)*43758.5453;
+ const tone=.95+.06*(grain-Math.floor(grain));
+ asphaltTint.setRGB(tone,tone,tone);asphaltColors.push(asphaltTint.r,asphaltTint.g,asphaltTint.b);
+}
+asphaltGeometry.setAttribute('color',new THREE.Float32BufferAttribute(asphaltColors,3));
+const asphalt=new THREE.Mesh(asphaltGeometry,new THREE.MeshStandardMaterial({color:0x414849,roughness:1,vertexColors:true}));runwayGroup.add(asphalt);
 const paint=[];
-function marking(width,length,x,z){const g=new THREE.PlaneGeometry(width,length);g.rotateX(-Math.PI/2);g.translate(x,.015,z);paint.push(g)}
+function marking(width,length,x,z){const g=new THREE.PlaneGeometry(width,length);g.rotateX(-Math.PI/2);g.translate(x,.035,z);paint.push(g)}
 for(let z=-520;z<=520;z+=60)marking(.65,20,0,z);
 for(const x of [-19,19])marking(.25,1160,x,0);
 for(const z of [-565,565])for(const x of [-12,-8,-4,4,8,12])marking(1.8,15,x,z);
-const paintGeometry=mergeGeometries(paint,false);paint.forEach(g=>g.dispose());runwayGroup.add(new THREE.Mesh(paintGeometry,new THREE.MeshStandardMaterial({color:0xd8d9cf,roughness:1})));scene.add(runwayGroup);
+const paintGeometry=mergeGeometries(paint,false);paint.forEach(g=>g.dispose());paintGeometry.computeBoundingSphere();runwayGroup.add(new THREE.Mesh(paintGeometry,new THREE.MeshStandardMaterial({color:0xd8d9cf,roughness:1,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})));scene.add(runwayGroup);
 function makeTile(tx,tz){
  const g=new THREE.PlaneGeometry(TILE,TILE,SEGMENTS,SEGMENTS);g.rotateX(-Math.PI/2);const p=g.attributes.position,colors=[];
  for(let i=0;i<p.count;i++){
