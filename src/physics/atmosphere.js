@@ -1,4 +1,6 @@
 import {Vector3} from '../vendor/three.js';
+import {noise} from '../world/noise.js';
+import {TerrainAirflow} from './terrain-airflow.js';
 
 // +X east, +Y up, +Z north; wind direction is meteorological FROM.
 export const ATMOSPHERE_SEED=17391;
@@ -12,20 +14,11 @@ const origin=Object.freeze({x:0,y:0,z:0});
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const fade=t=>t*t*t*(t*(t*6-15)+10);
 const mix=(a,b,t)=>a+(b-a)*t;
-function lattice(x,y,z,seed){
- let h=Math.imul(x,374761393)^Math.imul(y,668265263)^Math.imul(z,2147483647)^seed;
- h=Math.imul(h^(h>>>13),1274126177);h^=h>>>16;
- return (h>>>0)/2147483647.5-1;
-}
-// Quintic value noise: continuous values and first/second derivatives at cell edges.
-function noise(x,y,z,seed){
- const ix=Math.floor(x),iy=Math.floor(y),iz=Math.floor(z),u=fade(x-ix),v=fade(y-iy),w=fade(z-iz);
- return mix(mix(mix(lattice(ix,iy,iz,seed),lattice(ix+1,iy,iz,seed),u),mix(lattice(ix,iy+1,iz,seed),lattice(ix+1,iy+1,iz,seed),u),v),mix(mix(lattice(ix,iy,iz+1,seed),lattice(ix+1,iy,iz+1,seed),u),mix(lattice(ix,iy+1,iz+1,seed),lattice(ix+1,iy+1,iz+1,seed),u),v),w);
-}
-export function createConditions(){return {mean:new Vector3(),slowGust:new Vector3(),turbulence:new Vector3(),gust:new Vector3(),wind:new Vector3(),verticalAirflowMps:0}}
+export function createConditions(){return {mean:new Vector3(),slowGust:new Vector3(),turbulence:new Vector3(),gust:new Vector3(),wind:new Vector3(),verticalAirflowMps:0,terrain:{heightM:0,clearanceM:0,verticalMps:0,turbulenceMultiplier:1,regime:'NEUTRAL'}}}
 
 export class Atmosphere {
- constructor(preset='light',seed=ATMOSPHERE_SEED){
+ constructor(preset='light',seed=ATMOSPHERE_SEED,terrain=null){
+  this.terrainFlow=terrain?new TerrainAirflow(terrain):null;
   if(!atmospherePresets[preset])throw Error('Unknown atmosphere preset');
   this.seed=seed>>>0;this.preset=preset;this.settings={...atmospherePresets[preset]};
   this.center=createConditions();this.mean=this.center.mean;this.wind=this.center.wind;this.gust=this.center.gust;
@@ -34,7 +27,7 @@ export class Atmosphere {
   this.reset();
  }
  get enabled(){return this.preset!=='off'}
- config(){return {modelVersion:'2.1',preset:this.preset,seed:this.seed,meanSpeedMps:this.settings.speedMps,fromDeg:this.settings.fromDeg,gustIntensity:this.settings.intensity}}
+ config(){return {modelVersion:'2.2',terrainInfluence:!!this.terrainFlow,preset:this.preset,seed:this.seed,meanSpeedMps:this.settings.speedMps,fromDeg:this.settings.fromDeg,gustIntensity:this.settings.intensity}}
  setTarget(){const r=this.settings.fromDeg*Math.PI/180;this.targetMean.set(-Math.sin(r)*this.settings.speedMps,0,-Math.cos(r)*this.settings.speedMps)}
  reset(position=origin){this.setTarget();this.appliedMean.copy(this.targetMean);this.appliedIntensity=this.settings.intensity;this.blend=1;this.advection.set(0,0,0);this.sample(position,0,this.center)}
  set(config){
@@ -70,7 +63,9 @@ export class Atmosphere {
     k*(2.4*noise(tx+13,ty+7,tz-21,seed+53)+1.05*noise(tx*2.17,ty*1.83+11,tz*2.09,seed+59)),
     k*(1.3*noise(tx-18,ty+19,tz+8,seed+61)+.55*noise(tx*2.17-7,ty*1.83,tz*2.09+14,seed+67)));
   }
-  out.gust.copy(out.slowGust).add(out.turbulence);out.gust.y+=out.verticalAirflowMps;
+  out.terrain.verticalMps=0;out.terrain.turbulenceMultiplier=1;out.terrain.regime='NEUTRAL';
+  if(this.enabled&&this.terrainFlow)this.terrainFlow.apply(position,out.mean.x+out.slowGust.x+out.turbulence.x,out.mean.z+out.slowGust.z+out.turbulence.z,out);
+  out.gust.copy(out.slowGust).add(out.turbulence);out.gust.y+=out.verticalAirflowMps+out.terrain.verticalMps;
   out.wind.copy(out.mean).add(out.gust);return out;
  }
 }

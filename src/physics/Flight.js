@@ -1,20 +1,23 @@
 import {Vector3,Quaternion} from '../vendor/three.js';
 import {defaults,profiles} from '../config/profiles.js';
-import {ground} from '../world/height.js';
+import {ground,baseGround} from '../world/height.js';
 import {AirflowResponse} from './airflow-response.js';
+import {TerrainCollision} from './terrain-collision.js';
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const smooth=(a,b,x)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 export function engineAt(p,speed){return p.engine/(1+Math.max(0,speed-p.fadeStart)*p.fadeRate);}
 
 export class Flight {
- constructor(profileId="bush",atmosphere=null){this.atmosphere=atmosphere;this.airVelocity=new Vector3();this.airflowResponse=new AirflowResponse();this.turbulenceResponse=1;this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
+ constructor(profileId="bush",atmosphere=null){this.atmosphere=atmosphere;this.airVelocity=new Vector3();this.airflowResponse=new AirflowResponse();this.terrainCollision=new TerrainCollision();this.lastImpact=null;this.turbulenceResponse=1;this.profileId=profileId;this.profile=profiles[profileId];this.tunings={bush:{...defaults},fighter:{...defaults}};this.tuning=this.tunings[profileId];this.p=new Vector3();this.v=new Vector3();this.q=new Quaternion();this.w=new Vector3();this.input={pitch:0,roll:0,yaw:0};this.diagnostics={};this.f=new Vector3();this.u=new Vector3();this.x=new Vector3();this.local=new Vector3();this.dir=new Vector3();this.liftDir=new Vector3();this.force=new Vector3();this.dq=new Quaternion();this.inv=new Quaternion();this.reset();}
  // Single mass source for forces and approximate atmospheric inertia; future cargo can extend it.
  get massKg(){return this.profile.mass}
  selectProfile(id){if(!profiles[id])return;this.profileId=id;this.profile=profiles[id];this.tuning=this.tunings[id];this.reset();}
  restoreDefaults(){Object.assign(this.tuning,defaults);this.reset();}
  reset(){
+  this.lastImpact=null;
   const p=this.profile,t=this.tuning,mass=this.massKg;
-  this.p.set(-1200,ground(-1200,0)+p.startHeight,0);this.v.set(0,0,p.cruise);this.w.set(0,0,0);this.input={pitch:0,roll:0,yaw:0};this.stall=0;this.alpha=0;this.time=0;this.resets=0;
+  // Preserve the original world spawn; the shared surface still enforces safe clearance.
+  this.p.set(-1200,Math.max(baseGround(-1200,0)+p.startHeight,ground(-1200,0)+25),0);this.v.set(0,0,p.cruise);this.w.set(0,0,0);this.input={pitch:0,roll:0,yaw:0};this.stall=0;this.alpha=0;this.time=0;this.resets=0;
   if(this.atmosphere?.enabled){this.atmosphere.reset(this.p);this.v.add(this.atmosphere.wind)}
   else this.atmosphere?.reset(this.p);
   this.airflowResponse.clear(this);
@@ -79,7 +82,13 @@ export class Flight {
   if(this.atmosphere?.enabled){const a=this.airflowResponse.diagnostics;this.w.x+=a.pitchRadPerSec2*dt;this.w.y+=a.yawRadPerSec2*dt;this.w.z+=a.rollRadPerSec2*dt;}
   const angularSpeed=this.w.length();
   if(angularSpeed>1e-8){this.dq.setFromAxisAngle(this.dir.copy(this.w).divideScalar(angularSpeed),angularSpeed*dt);this.q.multiply(this.dq).normalize();}
-  if(recover && (this.p.y<ground(this.p.x,this.p.z)+9 || !Number.isFinite(this.p.lengthSq()))){const n=this.resets+1;this.reset();this.resets=n;return true;}
+  if(recover){
+   const invalid=!Number.isFinite(this.p.lengthSq()),contact=invalid?null:this.terrainCollision.sweep(this.previousP,this.previousQ,this.p,this.q);
+   if(invalid||contact){
+    const impact=contact?{positionM:[contact.centerX,contact.centerY,contact.centerZ],velocityMps:this.v.toArray(),contactPositionM:[contact.x,contact.y,contact.z],terrainHeightM:contact.terrainHeightM,surfaceHeightM:contact.heightM,surface:contact.surface,proxy:contact.proxy,sweepFraction:contact.fraction}:null;
+    const n=this.resets+1;this.reset();this.resets=n;this.lastImpact=impact;return true;
+   }
+  }
   return false;
  }
 }

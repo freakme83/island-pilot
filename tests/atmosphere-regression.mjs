@@ -67,7 +67,7 @@ assert.equal(json.events.filter(e=>e.type==='atmosphere_changed').length,1);
 assert.equal(json.events.find(e=>e.type==='atmosphere_changed').newConfiguration.fromDeg,180);
 assert.ok(json.samples.every(s=>Number.isFinite(s.airspeedMps)&&Number.isFinite(s.groundspeedMps)));
 assert.ok(json.summary?.stallDiagnosticsSummary);
-assert.equal(json.initialConfiguration.atmosphere.modelVersion,'2.1');
+assert.equal(json.initialConfiguration.atmosphere.modelVersion,'2.2');
 assert.equal(json.samples[0].airflowResponse.effectiveMassKg,720);
 assert.ok(Number.isFinite(json.samples[0].airflowResponse.rollRadPerSec2));
 assert.ok(json.samples[0].atmosphere.localTurbulenceMagnitudeMps>0);

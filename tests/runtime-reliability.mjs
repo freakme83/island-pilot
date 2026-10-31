@@ -28,6 +28,10 @@ const cameraRig=createCamera({camera:new THREE.PerspectiveCamera(),plane:new THR
 const keyboard=createKeyboard({keys,recordEvent:recorder.recordEvent,clearHeldControls:recorder.clearHeldControls,reset:()=>{},cameraRig,setPaused(){},setPrevious(){},setAccumulator(){}});
 const ui=createInterface({sim,atmosphere:new Atmosphere('off'),...recorder,reset:()=>{},cameraRig,renderer,$});
 ui.updateHud(.1);assert.equal(node('heading-number').textContent,'000°');
+assert.equal(node('terrain-diagnostics').hidden,true);
+node('show-terrain-debug').checked=true;node('show-terrain-debug').handlers.change();ui.updateHud(.1);
+assert.match(node('terrain-diag-height').textContent,/ m$/);
+node('show-terrain-debug').checked=false;node('show-terrain-debug').handlers.change();assert.equal(node('terrain-diagnostics').hidden,true);
 const tick=(effect=null,alpha=null,speed=null,vertical=null)=>{
  if(effect!==null)sim.stall=effect;
  if(alpha!==null){sim.alpha=alpha;sim.diagnostics.alpha=alpha}
@@ -65,6 +69,16 @@ assert.equal(sim.turbulenceResponse,1.5);
 const responseEvent=recorder.recorder.data.events.find(e=>e.type==='tuning_changed'&&e.parameter==='turbulenceResponse');
 assert.equal(responseEvent.newValue,1.5);assert.equal(responseEvent.configuration.airflowResponse.responseScale,1.5);
 discard();sim.turbulenceResponse=1;
+
+// One swept terrain contact records its pre-reset location, then leaves flight playable.
+sim.reset();sim.p.set(700,ground(700,4400)+8,4400);sim.v.set(0,-120,0);start();
+let impacted=false;for(let i=0;i<30&&!impacted;i++){impacted=sim.step(1/120);recorder.recordTick(impacted,1/120)}
+assert.equal(impacted,true);ui.updateHud(.1);assert.equal(node('terrain-impact').hidden,false);
+assert.match(node('terrain-impact').textContent,/Terrain impact/);ui.updateHud(4.1);assert.equal(node('terrain-impact').hidden,true);
+for(let i=0;i<3;i++){const didReset=sim.step(1/120);recorder.recordTick(didReset,1/120)}stop();
+const contacts=recorder.recorder.data.events.filter(e=>e.type==='ground_contact');assert.equal(contacts.length,1);
+assert.equal(contacts[0].impact.surface,'terrain');assert.ok(contacts[0].impact.positionM[0]>0);
+assert.equal(contacts[0].state.positionM[0],-1200);assert.ok(recorder.recorder.data.summary);discard();
 
 // Developed stall, nose-down aerodynamic recovery while still descending.
 sim.reset();recorder.resetStallDiagnosticState();start();many(12,0,0,36,0);
