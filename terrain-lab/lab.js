@@ -1,6 +1,7 @@
 import * as T from './vendor/three.module.min.js';
 import {OrbitControls} from './vendor/OrbitControls.js';
 import {makeTerrain} from './height.js';
+import {makeTileGeometry,skirtMaskFor} from './geometry.js';
 const $=id=>document.getElementById(id), canvas=$('view');
 try {
 const [meta,buffer]=await Promise.all([fetch('./data/metadata.json').then(r=>{if(!r.ok)throw Error('metadata unavailable');return r.json()}),fetch('./data/heights.f32').then(r=>{if(!r.ok)throw Error('height data unavailable');return r.arrayBuffer()})]);
@@ -15,22 +16,24 @@ const material=new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide});
 const lineMat=new T.LineBasicMaterial({color:0xffe591});
 const {width:w,height:h,widthMeters:W,depthMeters:D}=meta, cells=128, tiles=[];
 function pos(i,j){return [i/(w-1)*W-W/2,j/(h-1)*D-D/2]}
-function geometry(tile,step){
- const xs=[],zs=[];for(let i=tile.x0;i<tile.x1;i+=step)xs.push(i);xs.push(tile.x1);for(let j=tile.z0;j<tile.z1;j+=step)zs.push(j);zs.push(tile.z1);
- const vertices=[],colors=[],indices=[];const col=new T.Color();
- for(const j of zs)for(const i of xs){const [x,z]=pos(i,j),y=terrain.data[j*w+i];vertices.push(x,y,z);col.setRGB(...(y<20?[.53,.52,.35]:y<250?[.33,.44,.26]:y<700?[.40,.42,.31]:[.52,.51,.45]));colors.push(col.r,col.g,col.b)}
- const nx=xs.length,nz=zs.length;
- for(let j=0;j<nz-1;j++)for(let i=0;i<nx-1;i++){let a=j*nx+i,b=a+1,c=a+nx,d=c+1; // Omit only flat sea-level triangles; zero is still retained in authoritative samples.
- if(!(vertices[a*3+1]===0&&vertices[c*3+1]===0&&vertices[b*3+1]===0))indices.push(a,c,b);
- if(!(vertices[b*3+1]===0&&vertices[c*3+1]===0&&vertices[d*3+1]===0))indices.push(b,c,d);
+for(let z=0;z<h-1;z+=cells)for(let x=0;x<w-1;x+=cells){const tile={x0:x,x1:Math.min(x+cells,w-1),z0:z,z1:Math.min(z+cells,h-1),step:0,skirtMask:-1,nextStep:0,mesh:null};const [x0,z0]=pos(tile.x0,tile.z0),[x1,z1]=pos(tile.x1,tile.z1);tile.cx=(x0+x1)/2;tile.cz=(z0+z1)/2;const pts=[new T.Vector3(x0,8,z0),new T.Vector3(x1,8,z0),new T.Vector3(x1,8,z1),new T.Vector3(x0,8,z1),new T.Vector3(x0,8,z0)];tile.line=new T.Line(new T.BufferGeometry().setFromPoints(pts),lineMat);tile.line.visible=false;scene.add(tile.line);tiles.push(tile)}
+const tileByOrigin=new Map(tiles.map(tile=>[tile.x0+','+tile.z0,tile]));
+function updateLOD(){
+ for(const tile of tiles){
+  const dist=Math.hypot(camera.position.x-tile.cx,camera.position.z-tile.cz,Math.max(camera.position.y,0)*.7);
+  tile.nextStep=$('lod').checked?(dist<6000?1:dist<16000?2:dist<35000?4:8):4;
  }
- // Overlapping downward skirts bridge mismatched boundary sampling at LOD transitions.
- const edges=[Array.from({length:nx},(_,i)=>i),Array.from({length:nz},(_,i)=>i*nx+nx-1),Array.from({length:nx},(_,i)=>(nz-1)*nx+nx-1-i),Array.from({length:nz},(_,i)=>(nz-1-i)*nx)];
- for(const edge of edges){let prev=-1;for(const top of edge){const bottom=vertices.length/3;vertices.push(vertices[top*3],vertices[top*3+1]-120,vertices[top*3+2]);colors.push(colors[top*3],colors[top*3+1],colors[top*3+2]);if(prev>=0){indices.push(prev,top,bottom,prev,bottom,bottom-1)}prev=top}}
- const g=new T.BufferGeometry();g.setAttribute('position',new T.Float32BufferAttribute(vertices,3));g.setAttribute('color',new T.Float32BufferAttribute(colors,3));g.setIndex(indices);g.computeVertexNormals();g.computeBoundingSphere();return g;
+ for(const tile of tiles){
+  const mask=skirtMaskFor(tile,tileByOrigin);
+  if(tile.nextStep!==tile.step||mask!==tile.skirtMask){
+   const g=makeTileGeometry(meta,terrain.data,tile,tile.nextStep,mask);
+   if(tile.mesh){const old=tile.mesh.geometry;tile.mesh.geometry=g;old.dispose()}
+   else{tile.mesh=new T.Mesh(g,material);scene.add(tile.mesh)}
+   tile.step=tile.nextStep;tile.skirtMask=mask;
+  }
+  tile.line.visible=$('bounds').checked;
+ }
 }
-for(let z=0;z<h-1;z+=cells)for(let x=0;x<w-1;x+=cells){const tile={x0:x,x1:Math.min(x+cells,w-1),z0:z,z1:Math.min(z+cells,h-1),step:0,mesh:null};const [x0,z0]=pos(tile.x0,tile.z0),[x1,z1]=pos(tile.x1,tile.z1);tile.cx=(x0+x1)/2;tile.cz=(z0+z1)/2;const pts=[new T.Vector3(x0,8,z0),new T.Vector3(x1,8,z0),new T.Vector3(x1,8,z1),new T.Vector3(x0,8,z1),new T.Vector3(x0,8,z0)];tile.line=new T.Line(new T.BufferGeometry().setFromPoints(pts),lineMat);tile.line.visible=false;scene.add(tile.line);tiles.push(tile)}
-function updateLOD(){for(const tile of tiles){let dist=Math.hypot(camera.position.x-tile.cx,camera.position.z-tile.cz,Math.max(camera.position.y,0)*.7);let step=$('lod').checked?(dist<6000?1:dist<16000?2:dist<35000?4:8):4;if(step!==tile.step){const g=geometry(tile,step);if(tile.mesh){const old=tile.mesh.geometry;tile.mesh.geometry=g;old.dispose()}else{tile.mesh=new T.Mesh(g,material);scene.add(tile.mesh)}tile.step=step}tile.line.visible=$('bounds').checked}}
 let mode='orbit',keys=new Set(),yaw=0,pitch=0;const euler=new T.Euler(0,0,0,'YXZ');
 function syncLook(){euler.setFromQuaternion(camera.quaternion);yaw=euler.y;pitch=euler.x}
 $('mode').onchange=()=>{mode=$('mode').value;orbit.enabled=mode==='orbit';keys.clear();if(mode==='fly')syncLook();else document.exitPointerLock?.()};
