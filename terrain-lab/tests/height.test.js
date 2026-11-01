@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {makeTerrain} from '../height.js';
+const m=JSON.parse(await readFile(new URL('../data/metadata.json',import.meta.url)));
+const b=await readFile(new URL('../data/heights.f32',import.meta.url));
+const d=new Float32Array(b.buffer,b.byteOffset,b.byteLength/4), t=makeTerrain(m,d);
+assert.equal(d.length,m.width*m.height);assert.equal(t.heightAt(-m.widthMeters/2,-m.depthMeters/2),d[0]);assert.equal(t.heightAt(m.widthMeters/2,m.depthMeters/2),d.at(-1));assert.equal(t.heightAt(m.widthMeters,0),null);
+const simple=makeTerrain({width:2,height:2,widthMeters:10,depthMeters:20},new Float32Array([0,10,20,30]));assert.equal(simple.heightAt(0,0),15);assert.equal(simple.heightAt(-5,10),20);assert.equal(simple.heightAt(5,-10),10);
+let min=Infinity,max=-Infinity,zero=0;for(const v of d){assert.ok(Number.isFinite(v));min=Math.min(min,v);max=Math.max(max,v);if(v===0)zero++}assert.equal(min,m.minElevation);assert.equal(max,m.maxElevation);assert.equal(zero,m.zeroCount);assert.ok(m.depthMeters>52000&&m.widthMeters>32500&&m.widthMeters<32600);
+console.log('height sampling, raster dimensions and elevation checks passed');

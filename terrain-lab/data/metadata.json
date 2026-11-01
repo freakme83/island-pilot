@@ -1,0 +1,23 @@
+{
+  "width": 1343,
+  "height": 1689,
+  "west": 25.800833322222235,
+  "east": 26.173611100000013,
+  "north": 38.60222223333333,
+  "south": 38.13333334444444,
+  "centerLon": 25.987222211111124,
+  "centerLat": 38.36777778888889,
+  "metersPerDegreeLon": 87392.00242239235,
+  "metersPerDegreeLat": 111003.44749923873,
+  "widthMeters": 32577.796458569563,
+  "depthMeters": 52048.28316075441,
+  "minElevation": -1.9207878112792969,
+  "maxElevation": 1286.45166015625,
+  "zeroCount": 1141798,
+  "negativeCount": 14,
+  "invalidCount": 0,
+  "nodata": null,
+  "sourceSha256": "df737c215d177aa3696c20283e7eeb481a35c5edd4fdd3edcffea47c6cc7e913",
+  "encoding": "float32 little-endian, row-major north to south",
+  "pixelInterpretation": "PixelIsPoint; coordinates refer to sample centres"
+}
